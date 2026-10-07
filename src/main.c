@@ -1,10 +1,24 @@
 #include "raylib.h"
+#include <math.h>
 
 #include "resource_dir.h"	// utility header for SearchAndSetResourceDir
+
+#define GRID_CELL_SIZE 20
+#define MAX_GRID_CELLS 36
 
 // Types and Structures Definition
 typedef enum GameScreen {LOGO = 0, TITLE, GAMEPLAY, GAMEOVER} GameScreen;
 typedef enum Direction {UP = 0, DOWN, LEFT, RIGHT} Direction;
+
+typedef struct {
+	int x;
+	int y;
+} Point;
+
+typedef struct {
+	Point cell;
+	Color color;
+} PlayerData;
 
 int main ()
 {
@@ -12,30 +26,38 @@ int main ()
 	SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI);
 
 	// Constants and Gameplay Changing Variables
-	const int screenWidth = 800;
-	const int screenHeight = 600;
+	const int screenWidth = 1280; // 1280
+	const int screenHeight = 720; // 720
+
+	int miniScreenSize = 720;
+	int miniScreenStartX = screenWidth/2 - miniScreenSize/2;
+	int miniScreenStartY = screenHeight/2 - miniScreenSize/2;
 
 	GameScreen currentScreen = LOGO;
 	int frameCount = 0;
 	bool gameoverTriggered = false;
+	float frameTimeCount = 0;
 
 	// For the "snake"
-	Vector2 snakePos = {(float)screenWidth/2 - 16, (float)screenHeight/2 - 16};
-	Vector2 snakeSize = {32.0f, 32.0f};
-	const float speed = 250.0f;
+	PlayerData player = { 0 };
+	player.cell = (Point){ 2, 2 };
+	player.color = GREEN;
+
+	int snakeSize = 20; // pixels
+	const float speed = 5.0f; // in frames per cell
 	float speedVariable = 1.0f;
 	float movingDirection = 1.0f;
 	Direction lastDirection = RIGHT;
 
 	// Create the window and OpenGL context
 	InitWindow(screenWidth, screenHeight, "Not a Snake");
-	SetTargetFPS(60);
+	SetTargetFPS(120);
 
 	// Utility function from resource_dir.h to find the resources folder and set it as the current working directory so we can load from it
 	SearchAndSetResourceDir("resources");
 
 	// Load a texture from the resources directory
-	Texture wabbit = LoadTexture("wabbit_alpha.png");
+	//Texture wabbit = LoadTexture("wabbit_alpha.png");
 	
 	// game loop
 	while (!WindowShouldClose())		// run the loop until the user presses ESCAPE or presses the Close button on the window
@@ -61,9 +83,12 @@ int main ()
 				break;
 
 			case GAMEPLAY:
+				frameTimeCount += GetFrameTime() * 60;
+
 				if (gameoverTriggered) 
 				{
 					currentScreen = GAMEOVER;
+					frameTimeCount = 0;
 				}
 				break;
 
@@ -98,6 +123,7 @@ int main ()
 					break;
 
 				case GAMEPLAY:
+					ClearBackground(BLACK);
 					// For detecting input
 					if (IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_A))
 					{
@@ -123,22 +149,47 @@ int main ()
 					// For handling "snake" direction movement
 					if (lastDirection == RIGHT || lastDirection == LEFT)
 					{
-						snakePos.x += GetFrameTime() * (speed + speedVariable) * movingDirection;
+						if (frameTimeCount > speed) {
+							player.cell.x += movingDirection;
+							frameTimeCount = 0;
+						}
+						//player.cell.x += GetFrameTime() * movingDirection * speed;
+						//snakePos.x += GetFrameTime() * (speed + speedVariable) * movingDirection;
 					}
 					else 
 					{
-						snakePos.y += GetFrameTime() * (speed + speedVariable) * movingDirection;
+						
+						if (frameTimeCount > speed) {
+							player.cell.y += movingDirection;
+							frameTimeCount = 0;
+						}
+						//snakePos.y += GetFrameTime() * (speed + speedVariable) * movingDirection;
 					}
 					
 
 					// No deaths yet
-					if (snakePos.x > screenWidth) snakePos.x = 0 - 32;
-					if (snakePos.x < 0 - 32) snakePos.x = screenWidth;
-					if (snakePos.y > screenHeight) snakePos.y = 0 - 32;
-					if (snakePos.y < 0 - 32) snakePos.y = screenHeight;
+					if (player.cell.x < 0) player.cell.x = 0;
+					else if (player.cell.x >= MAX_GRID_CELLS) player.cell.x = MAX_GRID_CELLS - 1;
+					if (player.cell.y < 0) player.cell.y = 0;
+					else if (player.cell.y >= MAX_GRID_CELLS) player.cell.y = MAX_GRID_CELLS - 1;
 
+
+					// Drawing the grid and playable area
+					DrawRectangle(miniScreenStartX, miniScreenStartY, miniScreenSize, miniScreenSize, RAYWHITE);
+					
+					for (int y = 0; y <= MAX_GRID_CELLS; y++)
+					{
+						DrawLine(miniScreenStartX, miniScreenStartY + y*GRID_CELL_SIZE, miniScreenStartX + MAX_GRID_CELLS*GRID_CELL_SIZE, miniScreenStartY + y*GRID_CELL_SIZE, LIGHTGRAY);
+					}
+
+					for (int x = 0; x <= MAX_GRID_CELLS; x++)
+					{
+						DrawLine(miniScreenStartX + x*GRID_CELL_SIZE, miniScreenStartY, miniScreenStartX + x*GRID_CELL_SIZE, miniScreenStartY + MAX_GRID_CELLS*GRID_CELL_SIZE, LIGHTGRAY);
+					}
+					
 					//DrawTextureV(wabbit, snakePos, GRAY);
-					DrawRectangleV(snakePos, snakeSize, GREEN);
+					DrawRectangle(miniScreenStartX + player.cell.x*GRID_CELL_SIZE, miniScreenStartY + player.cell.y*GRID_CELL_SIZE, snakeSize, snakeSize, GREEN);
+
 					break;
 
 				case GAMEOVER:
@@ -153,7 +204,7 @@ int main ()
 
 	// cleanup
 	// unload our texture so it can be cleaned up
-	UnloadTexture(wabbit);
+	//UnloadTexture(wabbit);
 
 	// destroy the window and cleanup the OpenGL context
 	CloseWindow();
