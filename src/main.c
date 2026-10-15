@@ -1,6 +1,9 @@
 #include "raylib.h"
 #include "raymath.h"
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+
 
 #include "resource_dir.h"	// utility header for SearchAndSetResourceDir
 
@@ -26,6 +29,20 @@ typedef struct {
 	Color color;
 	int size;
 } FruitData;
+
+typedef struct {
+	size_t size;
+	size_t capacity;
+	PlayerData* array;
+} snake_array;
+
+// function prototypes
+void InitSnakeArray(snake_array** arr_ptr);
+void FreeSnakeArray(snake_array* container);
+
+void InsertSegment(snake_array* container, PlayerData data);
+void UpdateSegment(snake_array* container, int index, PlayerData data);
+PlayerData GetSegment(snake_array* container, int index);
 
 int main ()
 {
@@ -63,15 +80,21 @@ int main ()
 	player.color = GREEN;
 	player.size = gridCellSize;
 
-	FruitData fruit = { 0 };
-	fruit.cell = (Point){ GetRandomValue(0, MAX_GRID_CELLS - 1), GetRandomValue(0, MAX_GRID_CELLS - 1)};
-	fruit.color = RED;
-	fruit.size = gridCellSize/3;
+	snake_array* snakeSegments;
+	InitSnakeArray(&snakeSegments);
+	InsertSegment(snakeSegments, player);
 
 	const float speed = 10.0f; // in frames per cell
 	float speedVariable = 0.0f; // subtracted from speed to make the snake go faster over time
 	float movingDirection = 1.0f;
 	Direction lastDirection = RIGHT;
+	bool hasMoved = false;
+
+	// For the fruit
+	FruitData fruit = { 0 };
+	fruit.cell = (Point){ GetRandomValue(0, MAX_GRID_CELLS - 1), GetRandomValue(0, MAX_GRID_CELLS - 1)};
+	fruit.color = RED;
+	fruit.size = gridCellSize/3;
 
 	// Utility function from resource_dir.h to find the resources folder and set it as the current working directory so we can load from it
 	SearchAndSetResourceDir("resources");
@@ -125,14 +148,6 @@ int main ()
 		{
 			frameTimeCount += GetFrameTime() * 60;
 
-			// Check if the player has eaten the fruit
-			if (player.cell.x == fruit.cell.x && player.cell.y == fruit.cell.y)
-			{
-				fruit.cell.x = GetRandomValue(0, MAX_GRID_CELLS - 1);
-				fruit.cell.y = GetRandomValue(0, MAX_GRID_CELLS - 1);
-				speedVariable += 0.15f;
-			}
-
 			// For detecting input
 			if ((IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_A)) && lastDirection != RIGHT)
 			{
@@ -155,29 +170,63 @@ int main ()
 				lastDirection = DOWN;
 			}
 
-			// For handling "snake" direction movement
+			// For handling new position of the head segment
 			float moveInterval = Clamp(speed - speedVariable, 2.0f, speed);
-			if (lastDirection == RIGHT || lastDirection == LEFT)
-			{
-				if (frameTimeCount >= moveInterval) {
-					player.cell.x += movingDirection;
-					frameTimeCount = 0;
-				}
-			}
-			else 
-			{
-				if (frameTimeCount >= moveInterval) {
-					player.cell.y += movingDirection;
-					frameTimeCount = 0;
-				}
-			}
-			
+			if (frameTimeCount >= moveInterval) {
+				PlayerData snakeHead = GetSegment(snakeSegments, 0);
 
-			// No deaths yet
-			if (player.cell.x < 0) player.cell.x = 0;
-			else if (player.cell.x >= MAX_GRID_CELLS) player.cell.x = MAX_GRID_CELLS - 1;
-			if (player.cell.y < 0) player.cell.y = 0;
-			else if (player.cell.y >= MAX_GRID_CELLS) player.cell.y = MAX_GRID_CELLS - 1;
+				// Check if the player has eaten the fruit
+				if (snakeHead.cell.x == fruit.cell.x && snakeHead.cell.y == fruit.cell.y)
+				{
+					// Necessary so the fruit doesn't spawn on the snake
+					for (int i = 0; i < snakeSegments->size; i++)
+					{
+						PlayerData segment = GetSegment(snakeSegments, i);
+						if (segment.cell.x == fruit.cell.x && segment.cell.y == fruit.cell.y)
+						{
+							fruit.cell.x = GetRandomValue(0, MAX_GRID_CELLS - 1);
+							fruit.cell.y = GetRandomValue(0, MAX_GRID_CELLS - 1);
+							i = -1; // Reset the loop to check again
+						}
+					}
+					speedVariable += 0.15f;
+	
+					// Add a new segment to the snake
+					PlayerData newSegment = { 0 };
+					newSegment.cell = (Point){ snakeHead.cell.x, snakeHead.cell.y };
+					newSegment.color = GREEN;
+					newSegment.size = gridCellSize;
+					InsertSegment(snakeSegments, newSegment);
+				}
+
+				// Move the snake segments in reverse order to avoid overwriting positions (before moving the head)
+				for (int i = snakeSegments->size - 1; i > 0; i--)
+				{
+					PlayerData prevSegment = GetSegment(snakeSegments, i - 1);
+					UpdateSegment(snakeSegments, i, prevSegment);
+				}
+
+				// Move the head segment based on the last direction
+				if (lastDirection == RIGHT || lastDirection == LEFT)
+				{
+					snakeHead.cell.x += movingDirection;
+					frameTimeCount = 0;
+				}
+				if (lastDirection == UP || lastDirection == DOWN)
+				{
+					snakeHead.cell.y += movingDirection;
+					frameTimeCount = 0;
+				}
+
+				// No deaths yet
+				if (snakeHead.cell.x < 0) snakeHead.cell.x = 0;
+				else if (snakeHead.cell.x >= MAX_GRID_CELLS) snakeHead.cell.x = MAX_GRID_CELLS - 1;
+				if (snakeHead.cell.y < 0) snakeHead.cell.y = 0;
+				else if (snakeHead.cell.y >= MAX_GRID_CELLS) snakeHead.cell.y = MAX_GRID_CELLS - 1;
+	
+				// Update the head segment to the new position
+				UpdateSegment(snakeSegments, 0, snakeHead);
+			}
 		}
 
 		// 
@@ -221,8 +270,11 @@ int main ()
 					DrawCircle(miniScreenStartX + fruit.cell.x*gridCellSize + gridCellSize/2, miniScreenStartY + fruit.cell.y*gridCellSize + gridCellSize/2, fruit.size, fruit.color);
 
 					// Snake
-					DrawRectangle(miniScreenStartX + player.cell.x*gridCellSize, miniScreenStartY + player.cell.y*gridCellSize, player.size, player.size, GREEN);
-					
+					for (int i = 0; i < snakeSegments->size; i++)
+					{
+						PlayerData segment = GetSegment(snakeSegments, i);
+						DrawRectangle(miniScreenStartX + segment.cell.x*gridCellSize, miniScreenStartY + segment.cell.y*gridCellSize, segment.size, segment.size, GREEN);
+					}
 					break;
 
 				case GAMEOVER:
@@ -244,4 +296,60 @@ int main ()
 	return 0;
 }
 
+void InitSnakeArray(snake_array** arr_ptr)
+{
+	snake_array *container;
+	container = (snake_array*)malloc(sizeof(snake_array));
+	if (!container) {
+		printf("Memory allocation failed for snake_array\n");
+		exit(0);
+	}
 
+	container->size = 0;
+	container->capacity = 4; // initial capacity
+	container->array = (PlayerData*)malloc(container->capacity * sizeof(PlayerData));
+	if (!container->array) {
+		printf("Memory allocation failed for PlayerData array\n");
+		exit(0);
+	}
+	*arr_ptr = container;
+}
+
+void FreeSnakeArray(snake_array* container)
+{
+	free(container->array);
+	free(container);
+}
+
+void InsertSegment(snake_array* container, PlayerData data)
+{
+	if (container->size == container->capacity) {
+		PlayerData* temp = container->array;
+		container->capacity *= 2;
+		container->array = (PlayerData*)realloc(container->array, container->capacity * sizeof(PlayerData));
+		if (!container->array) {
+			printf("Memory reallocation failed for PlayerData array\n");
+			container->array = temp;
+			return;
+		}
+	}
+	container->array[container->size++] = data;
+}
+
+void UpdateSegment(snake_array* container, int index, PlayerData data)
+{
+	if (index < 0 || index >= container->size) {
+		printf("Index out of bounds\n");
+		exit(0);
+	}
+	container->array[index] = data;
+}
+
+PlayerData GetSegment(snake_array* container, int index)
+{
+	if (index < 0 || index >= container->size) {
+		printf("Index out of bounds\n");
+		exit(0);
+	}
+	return container->array[index];
+}
